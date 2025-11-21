@@ -1,4 +1,4 @@
-tensorflow==2.19.0
+tensorflow==2.20.0
 deepface==0.0.95
 scikit-learn==1.6.1
 numpy==2.0.2
