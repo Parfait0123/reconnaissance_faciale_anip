@@ -9,6 +9,7 @@ import gdown
 from deepface import DeepFace
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+import glob
 
 # Configuration de la page
 st.set_page_config(
@@ -95,6 +96,66 @@ def download_from_drive(file_id, output_path):
     except Exception as e:
         st.error(f"Erreur lors du téléchargement: {str(e)}")
         return False
+
+# Fonction pour télécharger et extraire le dataset
+def download_and_extract_dataset(dataset_id, extract_path):
+    """Télécharge et extrait le dataset"""
+    try:
+        with st.spinner("Téléchargement du dataset en cours..."):
+            temp_dir = tempfile.mkdtemp()
+            zip_path = os.path.join(temp_dir, "dataset.zip")
+            
+            if not download_from_drive(dataset_id, zip_path):
+                return False
+            
+            # Extraire le zip
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_path)
+            
+            st.success("Dataset téléchargé et extrait avec succès")
+            return True
+    except Exception as e:
+        st.error(f"Erreur lors de l'extraction du dataset: {str(e)}")
+        return False
+
+# Fonction pour extraire les embeddings des images de test
+def extract_test_embeddings(test_dir, embedding_model='ArcFace', detector='retinaface'):
+    """Extrait les embeddings de toutes les images de test"""
+    try:
+        with st.spinner("Extraction des embeddings des images de test..."):
+            all_files = sorted(glob.glob(os.path.join(test_dir, '*.jpg')))
+            embeddings_dict = {}
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, img_path in enumerate(all_files):
+                try:
+                    embedding_obj = DeepFace.represent(
+                        img_path,
+                        model_name=embedding_model,
+                        enforce_detection=True,
+                        detector_backend=detector
+                    )
+                    filename = os.path.basename(img_path)
+                    embeddings_dict[filename] = np.array(embedding_obj[0]['embedding'])
+                    
+                    # Mettre à jour la progression
+                    progress = (i + 1) / len(all_files)
+                    progress_bar.progress(progress)
+                    status_text.text(f"Traitement de l'image {i+1}/{len(all_files)}: {filename}")
+                    
+                except Exception as e:
+                    st.warning(f"Erreur d'extraction pour l'image {img_path}: {e}")
+            
+            status_text.empty()
+            progress_bar.empty()
+            st.success(f"Extraction terminée: {len(embeddings_dict)} embeddings extraits")
+            return embeddings_dict
+    except Exception as e:
+        st.error(f"Erreur lors de l'extraction des embeddings: {str(e)}")
+        return {}
 
 # Fonction pour charger les modèles
 @st.cache_resource
@@ -211,6 +272,30 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
+        # Section pour le dataset
+        st.subheader("Dataset")
+        dataset_id = st.text_input(
+            "ID Google Drive - Dataset (optionnel)",
+            placeholder="1ABC...XYZ",
+            help="ID du fichier dataset.zip"
+        )
+        
+        if dataset_id and st.button("Télécharger le Dataset"):
+            temp_data_dir = tempfile.mkdtemp()
+            if download_and_extract_dataset(dataset_id, temp_data_dir):
+                st.session_state.dataset_path = temp_data_dir
+                # Extraire automatiquement les embeddings après téléchargement
+                test_dir = os.path.join(temp_data_dir, "data/dataset_tache_1/dataset_tache_1/test")
+                if os.path.exists(test_dir):
+                    embeddings_data = extract_test_embeddings(test_dir)
+                    if embeddings_data:
+                        st.session_state.embeddings_data = embeddings_data
+                        st.success("Embeddings des images de test extraits avec succès")
+        
+        st.markdown("---")
+        
+        # Section pour les modèles
+        st.subheader("Modèles")
         classifier_id = st.text_input(
             "ID Google Drive - Classificateur",
             placeholder="1ABC...XYZ",
