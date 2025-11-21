@@ -2,7 +2,7 @@ streamlit
 numpy
 joblib
 Pillow
-cv2
+opencv-python
 deepface==0.0.95
 scikit-learn
 gdown
