@@ -1,366 +1,456 @@
 import streamlit as st
 import numpy as np
 import joblib
-from deepface import DeepFace
 from PIL import Image
-from sklearn.metrics.pairwise import cosine_similarity
+import io
 import os
 import tempfile
-import requests
 import gdown
+from deepface import DeepFace
+from sklearn.metrics.pairwise import cosine_similarity
+import json
 
-# Configuration
+# Configuration de la page
 st.set_page_config(
-    page_title="Reconnaissance Faciale",
+    page_title="Système de Reconnaissance Faciale",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS personnalisé
+# Styles CSS personnalisés
 st.markdown("""
-<style>
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    
-    .main {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
-    
-    .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
-    
-    .metric-card {
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        border-left: 4px solid #00bcd4;
-    }
-    
-    .result-container {
-        background: white;
-        padding: 25px;
-        border-radius: 15px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
-        margin: 15px 0;
-    }
-    
-    .confidence-bar {
-        height: 8px;
-        background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f);
-        border-radius: 10px;
-        margin: 10px 0;
-    }
-    
-    h1, h2, h3 {
-        color: #1a1a2e;
+    <style>
+    .main-header {
+        font-size: 2.5rem;
         font-weight: 700;
+        color: #1f1f1f;
+        margin-bottom: 0.5rem;
     }
-    
-    .stButton > button {
-        background: linear-gradient(90deg, #00bcd4, #0097a7);
+    .sub-header {
+        font-size: 1.2rem;
+        color: #666;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border-left: 4px solid #4CAF50;
+        margin: 1rem 0;
+    }
+    .result-box {
+        background-color: #ffffff;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin: 1rem 0;
+    }
+    .similarity-item {
+        padding: 0.8rem;
+        margin: 0.5rem 0;
+        background-color: #f1f3f4;
+        border-radius: 8px;
+        border-left: 3px solid #2196F3;
+    }
+    .stButton>button {
+        width: 100%;
+        background-color: #4CAF50;
         color: white;
-        border: none;
-        padding: 12px 30px;
-        border-radius: 8px;
         font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        box-shadow: 0 6px 20px rgba(0, 188, 212, 0.4);
-    }
-    
-    .download-progress {
-        margin: 10px 0;
-        padding: 10px;
-        background: #e8f4f8;
+        padding: 0.75rem;
         border-radius: 8px;
-        border-left: 4px solid #00bcd4;
+        border: none;
+        transition: all 0.3s;
     }
-</style>
+    .stButton>button:hover {
+        background-color: #45a049;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .info-box {
+        background-color: #e3f2fd;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #2196F3;
+        margin: 1rem 0;
+    }
+    .warning-box {
+        background-color: #fff3e0;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #ff9800;
+        margin: 1rem 0;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
-def download_classifier():
-    """Télécharge le classifieur depuis Google Drive"""
-    classifier_url = "https://drive.google.com/uc?id=1wctJ8RWAjfefz4IbtKEpr43Pk81sjvwd"
-    classifier_path = "face_classifier.pkl"
-    
-    if not os.path.exists(classifier_path):
-        with st.spinner("Téléchargement du classifieur en cours... Cette opération peut prendre quelques instants."):
-            try:
-                # Utilisation de gdown pour télécharger depuis Google Drive
-                gdown.download(classifier_url, classifier_path, quiet=False)
-                st.success("Classifieur téléchargé avec succès!")
-                return True
-            except Exception as e:
-                st.error(f"Erreur lors du téléchargement du classifieur: {str(e)}")
-                return False
-    return True
-
+# Fonction pour télécharger les fichiers depuis Google Drive
 @st.cache_resource
-def load_models():
-    """Charge les modèles en téléchargeant le classifieur si nécessaire"""
-    # Vérifier et télécharger le classifieur si absent
-    if not download_classifier():
-        return None, None
-    
+def download_from_drive(file_id, output_path):
+    """Télécharge un fichier depuis Google Drive"""
     try:
-        # Charger le classifieur
-        classifier = joblib.load('face_classifier.pkl')
-        
-        # Charger le label encoder (supposé présent localement)
-        if os.path.exists('label_encoder.pkl'):
-            label_encoder = joblib.load('label_encoder.pkl')
-        else:
-            st.error("Fichier label_encoder.pkl non trouvé. Assurez-vous qu'il est présent dans le répertoire.")
-            return None, None
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, output_path, quiet=False)
+        return True
+    except Exception as e:
+        st.error(f"Erreur lors du téléchargement: {str(e)}")
+        return False
+
+# Fonction pour charger les modèles
+@st.cache_resource
+def load_models(classifier_id, encoder_id, embeddings_id):
+    """Charge les modèles et données nécessaires"""
+    try:
+        with st.spinner("Chargement des modèles en cours..."):
+            # Créer un répertoire temporaire
+            temp_dir = tempfile.mkdtemp()
             
-        st.success("Modèles chargés avec succès")
-        return classifier, label_encoder
-        
+            # Chemins des fichiers
+            classifier_path = os.path.join(temp_dir, "face_classifier.pkl")
+            encoder_path = os.path.join(temp_dir, "label_encoder.pkl")
+            embeddings_path = os.path.join(temp_dir, "embeddings_data.json")
+            
+            # Télécharger les fichiers
+            if not download_from_drive(classifier_id, classifier_path):
+                return None, None, None
+            if not download_from_drive(encoder_id, encoder_path):
+                return None, None, None
+            if embeddings_id and not download_from_drive(embeddings_id, embeddings_path):
+                st.warning("Fichier d'embeddings non chargé. Le clustering sera désactivé.")
+                embeddings_data = None
+            else:
+                with open(embeddings_path, 'r') as f:
+                    embeddings_data = json.load(f)
+            
+            # Charger les modèles
+            classifier = joblib.load(classifier_path)
+            label_encoder = joblib.load(encoder_path)
+            
+            st.success("Modèles chargés avec succès")
+            return classifier, label_encoder, embeddings_data
     except Exception as e:
         st.error(f"Erreur lors du chargement des modèles: {str(e)}")
-        return None, None
+        return None, None, None
 
-@st.cache_resource
-def load_database_embeddings():
-    """Charge les embeddings de la base de données"""
+# Fonction pour extraire l'embedding d'une image
+def extract_embedding(image, embedding_model='ArcFace', detector='retinaface'):
+    """Extrait l'embedding facial d'une image"""
     try:
-        if os.path.exists('embeddings_database.npy'):
-            embeddings_db = np.load('embeddings_database.npy', allow_pickle=True).item()
-            st.success("Base de données d'embeddings chargée")
-            return embeddings_db
-        else:
-            st.warning("Base de données d'embeddings non disponible")
-            return {}
-    except Exception as e:
-        st.error(f"Erreur lors du chargement des embeddings: {str(e)}")
-        return {}
-
-def extract_embedding(image_path):
-    """Extrait l'embedding facial"""
-    try:
-        embedding = DeepFace.represent(
-            img_path=image_path,
-            model_name='ArcFace',
+        # Sauvegarder temporairement l'image
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, "temp_image.jpg")
+        image.save(temp_path)
+        
+        # Extraire l'embedding
+        embedding_obj = DeepFace.represent(
+            temp_path,
+            model_name=embedding_model,
             enforce_detection=True,
-            detector_backend='retinaface'
-        )[0]['embedding']
-        return np.array(embedding)
+            detector_backend=detector
+        )
+        
+        # Nettoyer
+        os.remove(temp_path)
+        os.rmdir(temp_dir)
+        
+        return np.array(embedding_obj[0]['embedding'])
     except Exception as e:
-        st.error(f"Erreur lors de l'analyse du visage: {str(e)}")
-        return None
+        raise Exception(f"Erreur lors de l'extraction: {str(e)}")
 
-def find_top_k_similar(embedding, embeddings_db, k=5):
-    """Trouve les k visages les plus similaires"""
-    if not embeddings_db:
-        return [], []
+# Fonction pour trouver les visages similaires
+def find_similar_faces(query_embedding, embeddings_data, top_k=5):
+    """Trouve les visages les plus similaires via clustering"""
+    if not embeddings_data:
+        return []
     
-    filenames = list(embeddings_db.keys())
-    db_embeddings = np.array([embeddings_db[f] for f in filenames])
-    
-    similarities = cosine_similarity([embedding], db_embeddings)[0]
-    top_indices = np.argsort(similarities)[-k:][::-1]
-    
-    top_files = [filenames[i] for i in top_indices]
-    top_scores = [similarities[i] for i in top_indices]
-    
-    return top_files, top_scores
+    try:
+        # Convertir les embeddings stockés
+        stored_embeddings = []
+        image_ids = []
+        
+        for img_id, embedding in embeddings_data.items():
+            stored_embeddings.append(embedding)
+            image_ids.append(img_id)
+        
+        stored_embeddings = np.array(stored_embeddings)
+        
+        # Calculer les similarités cosinus
+        similarities = cosine_similarity([query_embedding], stored_embeddings)[0]
+        
+        # Obtenir les top K plus similaires
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+        
+        results = []
+        for idx in top_indices:
+            results.append({
+                'image_id': image_ids[idx],
+                'similarity': float(similarities[idx])
+            })
+        
+        return results
+    except Exception as e:
+        st.error(f"Erreur lors de la recherche de similarités: {str(e)}")
+        return []
 
 # Interface principale
-st.markdown("# Reconnaissance Faciale")
-st.markdown("*Système d'identification et d'analyse faciale*")
-
-st.markdown("---")
-
-# Section d'information sur le téléchargement
-with st.expander("ℹ️ Informations sur les modèles"):
-    st.markdown("""
-    **Configuration des modèles:**
-    - 🧠 **Classifieur SVM**: Téléchargé automatiquement (85.4 MB)
-    - 📝 **Label Encoder**: Fichier local
-    - 🗄️ **Base d'embeddings**: Fichier local
+def main():
+    # En-tête
+    st.markdown('<p class="main-header">Système de Reconnaissance Faciale</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Analyse avancée par classification et clustering</p>', unsafe_allow_html=True)
     
-    *Le premier lancement peut prendre quelques instants pour télécharger le classifieur.*
-    """)
-
-# Chargement des modèles
-classifier, label_encoder = load_models()
-embeddings_db = load_database_embeddings()
-
-if classifier is None or label_encoder is None:
-    st.error("Impossible de charger les modèles nécessaires. Vérifiez les fichiers requis.")
-    st.stop()
-
-# Sidebar pour les paramètres
-with st.sidebar:
-    st.markdown("### Paramètres d'analyse")
-    top_k = st.slider("Nombre de visages similaires à afficher", 1, 10, 5)
-    confidence_threshold = st.slider("Seuil de confiance minimum (%)", 0, 100, 30)
-    
-    st.markdown("---")
-    st.markdown("### À propos du système")
-    st.markdown("""
-    Ce système utilise une technologie avancée de reconnaissance faciale basée sur :
-    - **ArcFace** pour l'extraction des caractéristiques faciales
-    - **SVM** pour la classification des visages
-    - **Similarité cosinus** pour le regroupement des visages similaires
-    
-    Performance du modèle : 94.79% de précision
-    """)
-    
-    # Information sur l'état des modèles
-    st.markdown("---")
-    st.markdown("### État des modèles")
-    if os.path.exists('face_classifier.pkl'):
-        file_size = os.path.getsize('face_classifier.pkl') / (1024 * 1024)
-        st.success(f"✅ Classifieur: {file_size:.1f} MB")
-    else:
-        st.warning("⏳ Classifieur: En attente de téléchargement")
-    
-    if os.path.exists('label_encoder.pkl'):
-        st.success("✅ Label Encoder: Chargé")
-    else:
-        st.error("❌ Label Encoder: Manquant")
-    
-    if embeddings_db:
-        st.success(f"✅ Base d'embeddings: {len(embeddings_db)} visages")
-    else:
-        st.warning("⚠️ Base d'embeddings: Non disponible")
-
-# Zone d'upload
-st.markdown("### Télécharger une image pour analyse")
-
-uploaded_file = st.file_uploader(
-    "Sélectionnez une image au format JPG ou PNG",
-    type=["jpg", "jpeg", "png"],
-    help="Pour de meilleurs résultats, assurez-vous que le visage est bien éclairé et clairement visible"
-)
-
-if uploaded_file is not None:
-    # Sauvegarde temporaire
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
-        tmp_file.write(uploaded_file.getvalue())
-        temp_path = tmp_file.name
-    
-    # Affichage de l'image
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.markdown("#### Image sélectionnée")
-        img = Image.open(temp_path)
-        st.image(img, use_column_width=True)
-    
-    with col2:
-        st.markdown("#### Analyse")
-        if st.button("Lancer l'analyse faciale", use_container_width=True):
-            with st.spinner("Extraction des caractéristiques faciales..."):
-                embedding = extract_embedding(temp_path)
+    # Barre latérale pour la configuration
+    with st.sidebar:
+        st.header("Configuration des Modèles")
+        
+        st.markdown("""
+        <div class="info-box">
+        <strong>Instructions:</strong><br>
+        Entrez les identifiants Google Drive des fichiers de modèles ci-dessous.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        classifier_id = st.text_input(
+            "ID Google Drive - Classificateur",
+            placeholder="1ABC...XYZ",
+            help="ID du fichier face_classifier.pkl"
+        )
+        
+        encoder_id = st.text_input(
+            "ID Google Drive - Encodeur",
+            placeholder="1ABC...XYZ",
+            help="ID du fichier label_encoder.pkl"
+        )
+        
+        embeddings_id = st.text_input(
+            "ID Google Drive - Embeddings (optionnel)",
+            placeholder="1ABC...XYZ",
+            help="ID du fichier d'embeddings pour le clustering"
+        )
+        
+        st.markdown("---")
+        
+        # Paramètres avancés
+        with st.expander("Paramètres Avancés"):
+            embedding_model = st.selectbox(
+                "Modèle d'embedding",
+                ["ArcFace", "Facenet", "VGG-Face"],
+                index=0
+            )
             
-            if embedding is not None:
-                # Prédiction
-                with st.spinner("Classification en cours..."):
-                    pred_encoded = classifier.predict([embedding])[0]
-                    pred_person = label_encoder.inverse_transform([pred_encoded])[0]
-                    prob = classifier.predict_proba([embedding])[0].max() * 100
-                
-                # Résultats principaux
-                st.markdown("---")
-                st.markdown("### Résultats de l'identification")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Personne identifiée", pred_person)
-                with col2:
-                    st.metric("Niveau de confiance", f"{prob:.2f}%")
-                with col3:
-                    status = "Identification fiable" if prob >= confidence_threshold else "Nécessite vérification"
-                    st.metric("Statut", status)
-                
-                # Barre de confiance
-                st.markdown("#### Niveau de confiance de l'identification")
-                color = "#6bcf7f" if prob >= 80 else "#ffd93d" if prob >= 60 else "#ff6b6b"
-                st.markdown(f"""
-                <div style="background: #e0e0e0; border-radius: 10px; overflow: hidden;">
-                    <div style="width: {min(prob, 100)}%; background: {color}; 
-                    height: 20px; display: flex; align-items: center; justify-content: center;
-                    color: white; font-weight: bold; font-size: 12px;">
-                        {prob:.1f}%
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Recherche de visages similaires
-                st.markdown("---")
-                st.markdown(f"### Visages similaires dans la base de données")
-                
-                if embeddings_db:
-                    top_files, top_scores = find_top_k_similar(embedding, embeddings_db, top_k)
+            detector = st.selectbox(
+                "Détecteur de visage",
+                ["retinaface", "mtcnn", "opencv"],
+                index=0
+            )
+            
+            top_k = st.slider(
+                "Nombre de visages similaires",
+                min_value=1,
+                max_value=10,
+                value=5
+            )
+        
+        load_button = st.button("Charger les Modèles", type="primary")
+        
+        # Informations sur l'application
+        st.markdown("---")
+        st.markdown("""
+        <div style="font-size: 0.85rem; color: #666;">
+        <strong>À propos</strong><br>
+        Version 1.0<br>
+        Développé pour l'analyse de reconnaissance faciale<br>
+        Utilise DeepFace et SVM
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Charger les modèles si demandé
+    if load_button:
+        if not classifier_id or not encoder_id:
+            st.error("Veuillez fournir au minimum les IDs du classificateur et de l'encodeur.")
+        else:
+            st.session_state.classifier, st.session_state.label_encoder, st.session_state.embeddings_data = load_models(
+                classifier_id, encoder_id, embeddings_id
+            )
+            st.session_state.embedding_model = embedding_model
+            st.session_state.detector = detector
+            st.session_state.top_k = top_k
+    
+    # Vérifier si les modèles sont chargés
+    if 'classifier' not in st.session_state or st.session_state.classifier is None:
+        st.markdown("""
+        <div class="warning-box">
+        <strong>Aucun modèle chargé</strong><br>
+        Veuillez configurer et charger les modèles dans la barre latérale pour commencer.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Section d'information
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            ### Fonctionnalités
+            
+            **Classification SVM**
+            - Identification précise des personnes
+            - Score de confiance pour chaque prédiction
+            - Basé sur des embeddings ArcFace
+            
+            **Clustering par Similarité**
+            - Recherche des visages les plus proches
+            - Analyse par distance cosinus
+            - Jusqu'à 10 résultats similaires
+            """)
+        
+        with col2:
+            st.markdown("""
+            ### Comment utiliser
+            
+            1. Entrez les identifiants Google Drive dans la barre latérale
+            2. Cliquez sur "Charger les Modèles"
+            3. Téléchargez une image de test
+            4. Analysez les résultats de classification et de clustering
+            
+            Les modèles doivent être au format `.pkl` pour le classificateur et l'encodeur.
+            """)
+        
+        return
+    
+    # Interface principale d'analyse
+    st.markdown("---")
+    
+    # Upload d'image
+    uploaded_file = st.file_uploader(
+        "Télécharger une image à analyser",
+        type=['jpg', 'jpeg', 'png'],
+        help="Formats supportés: JPG, JPEG, PNG"
+    )
+    
+    if uploaded_file is not None:
+        # Afficher l'image uploadée
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            image = Image.open(uploaded_file).convert('RGB')
+            st.image(image, caption="Image téléchargée", use_container_width=True)
+        
+        with col2:
+            st.markdown("""
+            <div class="result-box">
+            <h3>Informations sur l'image</h3>
+            """, unsafe_allow_html=True)
+            
+            st.write(f"**Nom du fichier:** {uploaded_file.name}")
+            st.write(f"**Dimensions:** {image.size[0]} x {image.size[1]} pixels")
+            st.write(f"**Format:** {image.format if hasattr(image, 'format') else 'N/A'}")
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Bouton d'analyse
+        if st.button("Analyser l'image", type="primary"):
+            with st.spinner("Analyse en cours..."):
+                try:
+                    # Extraire l'embedding
+                    embedding = extract_embedding(
+                        image,
+                        st.session_state.embedding_model,
+                        st.session_state.detector
+                    )
                     
-                    if top_files:
-                        # Tableau des résultats
-                        similarity_data = {
-                            "Rang": list(range(1, len(top_files) + 1)),
-                            "Fichier": top_files,
-                            "Score de similarité": [f"{s*100:.2f}%" for s in top_scores]
-                        }
+                    # Prédiction avec le classificateur
+                    prediction_encoded = st.session_state.classifier.predict([embedding])
+                    predicted_person = st.session_state.label_encoder.inverse_transform(prediction_encoded)[0]
+                    
+                    # Probabilités
+                    probabilities = st.session_state.classifier.predict_proba([embedding])
+                    max_prob = np.max(probabilities) * 100
+                    
+                    # Afficher les résultats de classification
+                    st.markdown("---")
+                    st.markdown("## Résultats de l'Analyse")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                        <h4>Identité Prédite</h4>
+                        <h2 style="color: #4CAF50; margin: 0;">{predicted_person}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                        <h4>Confiance</h4>
+                        <h2 style="color: #2196F3; margin: 0;">{max_prob:.2f}%</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        confidence_level = "Élevée" if max_prob > 70 else "Moyenne" if max_prob > 50 else "Faible"
+                        color = "#4CAF50" if max_prob > 70 else "#ff9800" if max_prob > 50 else "#f44336"
+                        st.markdown(f"""
+                        <div class="metric-card">
+                        <h4>Niveau de Confiance</h4>
+                        <h2 style="color: {color}; margin: 0;">{confidence_level}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Top 5 prédictions
+                    st.markdown("### Distribution des Probabilités")
+                    top_5_indices = np.argsort(probabilities[0])[::-1][:5]
+                    
+                    for idx in top_5_indices:
+                        person = st.session_state.label_encoder.inverse_transform([idx])[0]
+                        prob = probabilities[0][idx] * 100
                         
-                        st.dataframe(
-                            similarity_data,
-                            use_container_width=True,
-                            hide_index=True
+                        st.markdown(f"""
+                        <div class="similarity-item">
+                        <strong>{person}</strong>
+                        <div style="background-color: #e0e0e0; border-radius: 10px; height: 20px; margin-top: 5px;">
+                            <div style="background-color: #4CAF50; width: {prob}%; height: 100%; border-radius: 10px; display: flex; align-items: center; padding-left: 10px; color: white; font-weight: bold;">
+                                {prob:.2f}%
+                            </div>
+                        </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Analyse par clustering
+                    if 'embeddings_data' in st.session_state and st.session_state.embeddings_data:
+                        st.markdown("---")
+                        st.markdown("### Visages Similaires (Clustering)")
+                        
+                        similar_faces = find_similar_faces(
+                            embedding,
+                            st.session_state.embeddings_data,
+                            st.session_state.top_k
                         )
                         
-                        # Galerie des images similaires
-                        st.markdown("#### Aperçu des correspondances")
-                        cols = st.columns(min(len(top_files), 5))
-                        
-                        for idx, (file, score) in enumerate(zip(top_files, top_scores)):
-                            if idx < 5:
-                                with cols[idx]:
-                                    try:
-                                        # Construction du chemin
-                                        possible_paths = [
-                                            f"data/dataset_tache_1/dataset_tache_1/train/{file}",
-                                            f"dataset/{file}",
-                                            file
-                                        ]
-                                        
-                                        img_path = None
-                                        for path in possible_paths:
-                                            if os.path.exists(path):
-                                                img_path = path
-                                                break
-                                        
-                                        if img_path:
-                                            sim_img = Image.open(img_path)
-                                            st.image(sim_img, use_column_width=True)
-                                            st.caption(f"Similarité : {score*100:.1f}%")
-                                        else:
-                                            st.info(f"Fichier : {file}")
-                                            st.caption(f"Similarité : {score*100:.1f}%")
-                                    except:
-                                        st.caption(f"Similarité : {score*100:.1f}%\nFichier : {file}")
-                    else:
-                        st.info("Aucun visage similaire trouvé dans la base de données.")
-                else:
-                    st.info("Base de données d'embeddings non disponible. Assurez-vous que le fichier embeddings_database.npy est présent dans le répertoire.")
-                
-                # Nettoyage du fichier temporaire
-                os.unlink(temp_path)
-                
-            else:
-                st.error("Impossible d'extraire les caractéristiques faciales. Veuillez vérifier que l'image contient un visage clairement visible.")
-else:
-    st.info("Veuillez télécharger une image contenant un visage pour commencer l'analyse")
+                        if similar_faces:
+                            st.markdown(f"**{len(similar_faces)} visage(s) similaire(s) trouvé(s)**")
+                            
+                            for i, face in enumerate(similar_faces, 1):
+                                similarity_score = face['similarity'] * 100
+                                st.markdown(f"""
+                                <div class="similarity-item">
+                                <strong>#{i} - Image ID: {face['image_id']}</strong><br>
+                                Similarité: <strong style="color: #2196F3;">{similarity_score:.2f}%</strong>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            st.info("Aucun visage similaire trouvé dans la base de données.")
+                    
+                except Exception as e:
+                    st.error(f"Erreur lors de l'analyse: {str(e)}")
+                    st.markdown("""
+                    <div class="warning-box">
+                    <strong>Suggestions:</strong><br>
+                    - Vérifiez que l'image contient un visage clairement visible<br>
+                    - Assurez-vous que l'image est de bonne qualité<br>
+                    - Réessayez avec une autre image
+                    </div>
+                    """, unsafe_allow_html=True)
 
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666; font-size: 12px; margin-top: 30px;">
-    Système de Reconnaissance Faciale | Technologies DeepFace & SVM
-</div>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
