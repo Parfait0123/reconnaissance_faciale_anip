@@ -6,7 +6,7 @@ deepface
 scikit-learn
 gdown
 tensorflow-cpu
-protobuf==3.20.3
+protobuf>=5.28.0
 pandas
 flask
 requests
