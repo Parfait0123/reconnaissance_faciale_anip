@@ -1,10 +1,7 @@
-tensorflow==2.20.0
-deepface==0.0.95
-scikit-learn==1.6.1
-numpy==2.0.2
-pillow==11.3.0
-gdown==5.2.0
-joblib==1.5.2
-opencv-python==4.12.0.88
-plotly==5.24.1
-retina-face==0.0.17
+streamlit
+numpy
+joblib
+Pillow
+deepface
+scikit-learn
+gdown
