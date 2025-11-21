@@ -6,6 +6,7 @@ deepface
 scikit-learn
 gdown
 tensorflow-cpu
+tf-keras
 protobuf>=5.28.0
 pandas
 flask
