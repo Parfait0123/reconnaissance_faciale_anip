@@ -108,7 +108,7 @@ def load_models(classifier_id, encoder_id, embeddings_id):
             # Chemins des fichiers
             classifier_path = os.path.join(temp_dir, "face_classifier.pkl")
             encoder_path = os.path.join(temp_dir, "label_encoder.pkl")
-            embeddings_path = os.path.join(temp_dir, "embeddings_data.json")
+            embeddings_path = os.path.join(temp_dir, "embeddings_database.npy")
             
             # Télécharger les fichiers
             if not download_from_drive(classifier_id, classifier_path):
@@ -119,8 +119,10 @@ def load_models(classifier_id, encoder_id, embeddings_id):
                 st.warning("Fichier d'embeddings non chargé. Le clustering sera désactivé.")
                 embeddings_data = None
             else:
-                with open(embeddings_path, 'r') as f:
-                    embeddings_data = json.load(f)
+                # Charger les embeddings depuis le fichier .npy
+                embeddings_array = np.load(embeddings_path, allow_pickle=True)
+                # Convertir en format dictionnaire pour la compatibilité
+                embeddings_data = {str(i): emb for i, emb in enumerate(embeddings_array)}
             
             # Charger les modèles
             classifier = joblib.load(classifier_path)
@@ -224,7 +226,7 @@ def main():
         embeddings_id = st.text_input(
             "ID Google Drive - Embeddings (optionnel)",
             placeholder="1ABC...XYZ",
-            help="ID du fichier d'embeddings pour le clustering"
+            help="ID du fichier embeddings_database.npy"
         )
         
         st.markdown("---")
@@ -311,7 +313,8 @@ def main():
             3. Téléchargez une image de test
             4. Analysez les résultats de classification et de clustering
             
-            Les modèles doivent être au format `.pkl` pour le classificateur et l'encodeur.
+            Les modèles doivent être au format `.pkl` pour le classificateur et l'encodeur,
+            et `.npy` pour la base de données d'embeddings.
             """)
         
         return
